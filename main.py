@@ -5,7 +5,7 @@ Features:
 - Arrow-key menu with SPACE to toggle and ENTER to continue
 - Remove class="..." from .html/.htm files
 - Clear content from .css/.scss files
-- Remove class/className and style attributes from .js/.ts template strings
+- Remove class/className and style attributes from .js/.ts and .jsx/.tsx template strings
 - Asks for project path and confirmation before applying changes
 - Graceful fallback if curses unavailable
 
@@ -96,7 +96,7 @@ MENU_OPTIONS = [
         True,
     ),
     (
-        "Remove classes/styles from .js/.ts templates",
+        "Remove classes/styles from .js/.ts and .jsx/.tsx templates",
         "Removes className, class, and style attributes from JS/TS template strings.",
         True,
     ),
