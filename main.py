@@ -7,6 +7,7 @@ Features:
 - Clear content from .css/.scss files
 - Remove class/className and style attributes from .js/.ts and .jsx/.tsx template strings
 - Asks for project path and confirmation before applying changes
+- Option to include/exclude common package/build folders
 - Graceful fallback if curses unavailable
 
 Windows: pip install windows-curses
@@ -38,6 +39,23 @@ JS_PATTERNS = [
     # style="..." or style='...' in templates
     re.compile(r'\s*style\s*=\s*(?:"[^"]*"|\'[^\']*\')', re.IGNORECASE),
 ]
+
+# Commonly excluded folders that might contain web styling
+EXCLUDED_FOLDERS = {
+    'node_modules',     # JavaScript/Node.js packages
+    'vendor',           # PHP Composer, Ruby Bundler packages
+    'bower_components', # Legacy JavaScript package manager
+    'packages',         # Flutter/Dart packages
+    'build',           # Build folders
+    'dist',            # Distribution folders
+    'target',          # Java/Maven, Rust build folders
+    '.git',            # Git repository
+    'venv',            # Python virtual environments
+    'env',             # Python virtual environments
+    '__pycache__',     # Python cache
+    '.next',           # Next.js build folder
+    '.nuxt',           # Nuxt.js build folder
+}
 
 
 def remove_class_attributes(content: str) -> str:
@@ -72,11 +90,31 @@ def clear_file(file_path: Path) -> Tuple[bool, str]:
         return False, f"✗ Error clearing {file_path}: {e}"
 
 
-def find_files(root: Path, extensions: List[str]) -> List[Path]:
-    """Find files by extension recursively."""
+def should_skip_directory(dir_path: Path, include_excluded: bool) -> bool:
+    """Check if directory should be skipped based on exclusion rules."""
+    if include_excluded:
+        return False
+    return dir_path.name in EXCLUDED_FOLDERS
+
+
+def find_files(root: Path, extensions: List[str], include_excluded: bool = False) -> List[Path]:
+    """Find files by extension recursively, optionally excluding common package/build folders."""
     files = []
-    for ext in extensions:
-        files.extend(root.rglob(f"*.{ext}"))
+
+    def _scan_directory(directory: Path):
+        try:
+            for item in directory.iterdir():
+                if item.is_dir():
+                    if not should_skip_directory(item, include_excluded):
+                        _scan_directory(item)
+                elif item.is_file():
+                    if any(item.suffix.lower() == f".{ext}" for ext in extensions):
+                        files.append(item)
+        except (PermissionError, OSError):
+            # Skip directories we can't access
+            pass
+
+    _scan_directory(root)
     return sorted(set(files), key=lambda p: str(p).lower())
 
 
@@ -249,6 +287,38 @@ def prompt_for_path() -> Optional[Path]:
             return None
 
 
+def prompt_for_exclusion_preference() -> bool:
+    """Ask user if they want to include commonly excluded folders."""
+    print("\n" + "=" * 60)
+    print("Folder Inclusion Options")
+    print("=" * 60)
+    print("📁 By default, the following folders are excluded:")
+    print("   • node_modules (JavaScript/Node.js packages)")
+    print("   • vendor (PHP Composer, Ruby Bundler packages)")
+    print("   • bower_components (legacy JavaScript packages)")
+    print("   • packages (Flutter/Dart packages)")
+    print("   • build, dist, target (build/distribution folders)")
+    print("   • .git, venv, env, __pycache__ (version control & environments)")
+    print("   • .next, .nuxt (framework build folders)")
+    print()
+    print("⚠️  Including these folders may:")
+    print("   • Significantly increase processing time")
+    print("   • Process thousands of additional files")
+    print("   • Modify third-party library files")
+    print()
+
+    while True:
+        choice = input("🤔 Do you want to INCLUDE these folders? (y/N): ").strip().lower()
+        if choice in ("y", "yes"):
+            print("✅ Will include all folders (including node_modules, vendor, etc.)")
+            return True
+        elif choice in ("n", "no", ""):
+            print("✅ Will exclude common package/build folders (recommended)")
+            return False
+        else:
+            print("❌ Please enter 'y' for yes or 'n' for no.")
+
+
 def confirm(prompt: str) -> bool:
     """Get yes/no confirmation from user."""
     return input(f"{prompt} (y/N): ").strip().lower() in ("y", "yes")
@@ -258,10 +328,12 @@ def confirm(prompt: str) -> bool:
 # Operation functions
 # --------------------------
 
-def remove_html_classes(project_path: Path):
+def remove_html_classes(project_path: Path, include_excluded: bool):
     """Remove class attributes from HTML files."""
     print(f"\n🔍 Searching for HTML files in: {project_path}")
-    html_files = find_files(project_path, ["html", "htm"])
+    if not include_excluded:
+        print("ℹ️  Excluding common package/build folders...")
+    html_files = find_files(project_path, ["html", "htm"], include_excluded)
 
     if not html_files:
         print("❌ No HTML files found.")
@@ -282,10 +354,12 @@ def remove_html_classes(project_path: Path):
     print(f"\n✅ Successfully processed {success_count}/{len(html_files)} file(s).")
 
 
-def clear_css_files(project_path: Path):
+def clear_css_files(project_path: Path, include_excluded: bool):
     """Clear CSS/SCSS files."""
     print(f"\n🔍 Searching for CSS/SCSS files in: {project_path}")
-    css_files = find_files(project_path, ["css", "scss"])
+    if not include_excluded:
+        print("ℹ️  Excluding common package/build folders...")
+    css_files = find_files(project_path, ["css", "scss"], include_excluded)
 
     if not css_files:
         print("❌ No CSS/SCSS files found.")
@@ -310,10 +384,12 @@ def clear_css_files(project_path: Path):
     print(f"\n✅ Successfully cleared {success_count}/{len(css_files)} file(s).")
 
 
-def clean_js_templates(project_path: Path):
+def clean_js_templates(project_path: Path, include_excluded: bool):
     """Remove class/style attributes from JS/TS template strings."""
     print(f"\n🔍 Searching for JS/TS files in: {project_path}")
-    js_files = find_files(project_path, ["js", "ts", "jsx", "tsx"])
+    if not include_excluded:
+        print("ℹ️  Excluding common package/build folders...")
+    js_files = find_files(project_path, ["js", "ts", "jsx", "tsx"], include_excluded)
 
     if not js_files:
         print("❌ No JS/TS files found.")
@@ -370,7 +446,14 @@ def main():
         print("\nCancelled. Goodbye! 👋")
         return
 
+    # Ask about folder inclusion preference
+    include_excluded = prompt_for_exclusion_preference()
+
     print(f"\n🚀 Processing: {project_path}")
+    if include_excluded:
+        print("⚠️  Including ALL folders (this may take longer)")
+    else:
+        print("✅ Excluding common package/build folders")
 
     # Execute selected operations
     operations = [
@@ -384,7 +467,7 @@ def main():
             print("\n" + "=" * 50)
             print(f"OPERATION: {title}")
             print("=" * 50)
-            func(project_path)
+            func(project_path, include_excluded)
 
     print("\n🎉 All operations completed!")
     try:
